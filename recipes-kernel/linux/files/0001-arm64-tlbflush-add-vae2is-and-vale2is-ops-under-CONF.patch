@@ -1,0 +1,69 @@
+From 04e26c5ea8bab4951c1720e1b5c4d846596624b7 Mon Sep 17 00:00:00 2001
+From: Zhantao Tang <zhantao.tang@windriver.com>
+Date: Tue, 23 Jul 2024 08:10:58 +0000
+Subject: [PATCH] arm64: tlbflush: add vae2is and vale2is ops under
+ CONFIG_NXP_S32CC_ERRATUM_ERR050481
+
+Now the KVM configure is enabled by default, but when using the following macro:
+ #define __tlbi(op, ...) __tlbi_##op(__VA_ARGS__)
+
+which is controlled by CONFIG_NXP_S32CC_ERRATUM_ERR050481, to define the tlbi
+instructions, there will be following error:
+
+  arch/arm64/include/asm/tlbflush.h:80:25: error: implicit declaration of function '__tlbi_vae2is' [-Werror=implicit-function-declaration]
+  |    80 | #define __tlbi(op, ...) __tlbi_##op(__VA_ARGS__)
+  |       |                         ^~~~~~~
+
+This is because there is lack of definitions of __tlbi_vae2is and
+__tlbi_vale2is under CONFIG_NXP_S32CC_ERRATUM_ERR050481, so define them
+to fix the above error.
+
+The new added definitions refer to section "2.81 ERR050481" of the ERRATA
+document "S32G2_0P77B.pdf", which is from vendor's website.
+
+Upstream-Status: Pending
+
+Signed-off-by: Zhantao Tang <zhantao.tang@windriver.com>
+---
+ arch/arm64/include/asm/tlbflush.h | 19 ++++++++++++-------
+ 1 file changed, 12 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm64/include/asm/tlbflush.h b/arch/arm64/include/asm/tlbflush.h
+index df84cab38af3..0d9a5a0a345c 100644
+--- a/arch/arm64/include/asm/tlbflush.h
++++ b/arch/arm64/include/asm/tlbflush.h
+@@ -54,19 +54,24 @@
+ #define IS_ERR050481_ADDR(addr_shr_12)  \
+ 	(((addr_shr_12) & GENMASK_ULL(36, 29)) != 0)
+ 
+-#define S32CC_TLBI_ALT(OP, ADDR) do {\
++#define S32CC_TLBI_ALT(OP, ADDR, EL) do {\
+ 	unsigned long __temp_050481 = (ADDR);\
+ 	if (cpu_has_nxp_err050481() && IS_ERR050481_ADDR(__temp_050481))\
+-		__TLBI_0(vmalle1is, 0);\
++		if ((EL) == 1)\
++			__TLBI_0(vmalle1is, 0);\
++		else\
++			__TLBI_0(alle2is, 0);\
+ 	else\
+ 		__TLBI_1(OP, __temp_050481);\
+ } while (0)
+ 
+-#define __tlbi_vaae1is(ADDR, ...)	S32CC_TLBI_ALT(vaae1is, ADDR)
+-#define __tlbi_vaae1is(ADDR, ...)	S32CC_TLBI_ALT(vaae1is, ADDR)
+-#define __tlbi_vaale1is(ADDR, ...)	S32CC_TLBI_ALT(vaale1is, ADDR)
+-#define __tlbi_vae1is(ADDR, ...)	S32CC_TLBI_ALT(vae1is, ADDR)
+-#define __tlbi_vale1is(ADDR, ...)	S32CC_TLBI_ALT(vale1is, ADDR)
++#define __tlbi_vaae1is(ADDR, ...)	S32CC_TLBI_ALT(vaae1is, ADDR, 1)
++#define __tlbi_vaae1is(ADDR, ...)	S32CC_TLBI_ALT(vaae1is, ADDR, 1)
++#define __tlbi_vaale1is(ADDR, ...)	S32CC_TLBI_ALT(vaale1is, ADDR, 1)
++#define __tlbi_vae1is(ADDR, ...)	S32CC_TLBI_ALT(vae1is, ADDR, 1)
++#define __tlbi_vale1is(ADDR, ...)	S32CC_TLBI_ALT(vale1is, ADDR, 1)
++#define __tlbi_vae2is(ADDR, ...)	S32CC_TLBI_ALT(vae2is, ADDR, 2)
++#define __tlbi_vale2is(ADDR, ...)	S32CC_TLBI_ALT(vale2is, ADDR, 2)
+ #define __tlbi_vmalle1()		__TLBI_0(vmalle1, 0)
+ #define __tlbi_vmalle1is()		__TLBI_0(vmalle1is, 0)
+ #define __tlbi_alle1is()		__TLBI_0(alle1is, 0)
+-- 
+2.34.1
+
